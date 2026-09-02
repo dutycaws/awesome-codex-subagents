@@ -50,6 +50,64 @@ mkdir -p .codex/agents
 cp categories/04-quality-security/reviewer.toml .codex/agents/
 ```
 
+### Keep Agent Definitions Linked to This Repository
+
+Copying creates a snapshot. If you want this checkout to remain the canonical, repository-controlled source, create symbolic links from the Codex agent directory to the TOML files under `categories/`. Pulling future repository updates then updates the installed agents without another copy step.
+
+The destination names must not already exist. Review or preserve older copied definitions before replacing them with links.
+
+#### macOS and Linux
+
+From the repository root, set the source and destination directories:
+
+```bash
+repo_dir="$(pwd -P)"
+agents_dir="${CODEX_HOME:-$HOME/.codex}/agents"
+mkdir -p "$agents_dir"
+```
+
+Link one agent:
+
+```bash
+ln -s "$repo_dir/categories/04-quality-security/reviewer.toml" \
+  "$agents_dir/reviewer.toml"
+```
+
+Or link every agent (agent filenames are unique in this repository):
+
+```bash
+find "$repo_dir/categories" -type f -name '*.toml' \
+  -exec ln -s {} "$agents_dir/" \;
+```
+
+#### Windows PowerShell
+
+From the repository root, set the source and destination directories. Creating symbolic links may require Developer Mode or an elevated PowerShell session.
+
+```powershell
+$CodexRoot = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME ".codex" }
+$AgentsDir = Join-Path $CodexRoot "agents"
+$RepoRoot = (Resolve-Path ".").Path
+New-Item -ItemType Directory -Force $AgentsDir | Out-Null
+```
+
+Link one agent:
+
+```powershell
+$Source = Join-Path $RepoRoot "categories/04-quality-security/reviewer.toml"
+New-Item -ItemType SymbolicLink -Path (Join-Path $AgentsDir "reviewer.toml") -Target $Source
+```
+
+Or link every agent:
+
+```powershell
+Get-ChildItem (Join-Path $RepoRoot "categories") -Recurse -Filter "*.toml" | ForEach-Object {
+    New-Item -ItemType SymbolicLink -Path (Join-Path $AgentsDir $_.Name) -Target $_.FullName
+}
+```
+
+For project-scoped installation, use that project's `.codex/agents/` directory as the destination instead. After linking or pulling updates, start a new Codex session if the agent definitions are already loaded.
+
 If you use agent configuration in Codex, keep it in `.codex/config.toml` under `[agents]` as described in the official docs.
 
 ### Included Codex Skills
