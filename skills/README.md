@@ -17,7 +17,7 @@ When `CODEX_HOME` is unset, Codex uses `~/.codex`.
 From the repository root:
 
 ```bash
-skill_name="icm-workflow-architect" # or llm-wiki / multi-agent-debate / tiered-epic-orchestrator
+skill_name="clickup-project-timesheet" # or another directory under skills/
 skills_dir="${CODEX_HOME:-$HOME/.codex}/skills"
 mkdir -p "$skills_dir"
 ln -s "$PWD/skills/$skill_name" "$skills_dir/$skill_name"
@@ -50,6 +50,7 @@ The installed skill updates immediately because Codex resolves the link to the r
 
 ## Available skills
 
+- [`clickup-project-timesheet`](clickup-project-timesheet/) — ClickUp REST API timesheets grouped by person and Project Code, with separate Battlestar and Arrakis tabs.
 - [`icm-workflow-architect`](icm-workflow-architect/) — converts prompts, SOPs, and recurring workflows into repository-controlled ICM structures for Codex.
 - [`llm-wiki`](llm-wiki/) — persistent, compounding Markdown knowledge bases. See its [README](llm-wiki/README.md) for complete installation and usage instructions.
 - [`multi-agent-debate`](multi-agent-debate/) — a council of independent experts for adversarial debate and structured synthesis. See its [README](multi-agent-debate/README.md) for installation and usage instructions.

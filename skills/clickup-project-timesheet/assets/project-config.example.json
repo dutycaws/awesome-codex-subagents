@@ -1,0 +1,30 @@
+{
+  "workspace_id": "",
+  "workspace_name": "",
+  "project_code_field": "Project Code",
+  "time_entry_slice_days": 31,
+  "projects": [
+    {
+      "key": "battlestar",
+      "name": "Project Battlestar",
+      "tab_name": "Project Battlestar",
+      "space_id": "",
+      "space_names": [
+        "Project Battlestar",
+        "Battlestar"
+      ],
+      "list_ids": []
+    },
+    {
+      "key": "arrakis",
+      "name": "Project Arrakis",
+      "tab_name": "Project Arrakis",
+      "space_id": "",
+      "space_names": [
+        "Project Arrakis",
+        "Arrakis"
+      ],
+      "list_ids": []
+    }
+  ]
+}

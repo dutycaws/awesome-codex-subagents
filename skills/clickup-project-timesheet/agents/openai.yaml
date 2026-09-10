@@ -1,0 +1,4 @@
+interface:
+  display_name: "ClickUp Project Timesheet"
+  short_description: "Build coded project timesheets from ClickUp"
+  default_prompt: "Use $clickup-project-timesheet to build a coded timesheet for Project Battlestar and Project Arrakis."
