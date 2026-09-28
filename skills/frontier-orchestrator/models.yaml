@@ -1,0 +1,16 @@
+# Skill-specific configuration, NOT a native Codex config.toml file.
+# These are editable defaults. Explicit task overrides take precedence.
+schema_version: 1
+
+supervisor:
+  model: inherit
+  reasoning_effort: inherit
+
+worker_defaults:
+  model: gpt-6-luna
+  reasoning_effort: max
+
+workers:
+  implementer: {}
+  verifier: {}
+  specialist: {}

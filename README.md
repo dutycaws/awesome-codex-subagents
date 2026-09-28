@@ -117,6 +117,7 @@ This repository also includes reusable Codex skills. Their canonical definitions
 | Skill | Description |
 |------|-------------|
 | [**clickup-project-timesheet**](skills/clickup-project-timesheet/) | Builds auditable Excel timesheets from ClickUp REST data, grouped by person and Project Code for Battlestar and Arrakis. |
+| [**frontier-orchestrator**](skills/frontier-orchestrator/) | Coordinates implementation and verification with configurable supervisor and worker models. |
 | [**icm-workflow-architect**](skills/icm-workflow-architect/) | Converts prompts, SOPs, and recurring workflows into repository-controlled ICM structures for Codex. |
 | [**llm-wiki**](skills/llm-wiki/) | Builds and maintains a persistent, interlinked Markdown knowledge base with provenance, lifecycle, linting, and optional graph/search extensions. |
 | [**multi-agent-debate**](skills/multi-agent-debate/) | Runs a council of independent subagents to challenge consequential decisions and produce an evidence-weighted synthesis. |

@@ -51,6 +51,7 @@ The installed skill updates immediately because Codex resolves the link to the r
 ## Available skills
 
 - [`clickup-project-timesheet`](clickup-project-timesheet/) — ClickUp REST API timesheets grouped by person and Project Code, with separate Battlestar and Arrakis tabs.
+- [`frontier-orchestrator`](frontier-orchestrator/) — supervisor and worker workflow with configurable model and reasoning settings.
 - [`icm-workflow-architect`](icm-workflow-architect/) — converts prompts, SOPs, and recurring workflows into repository-controlled ICM structures for Codex.
 - [`llm-wiki`](llm-wiki/) — persistent, compounding Markdown knowledge bases. See its [README](llm-wiki/README.md) for complete installation and usage instructions.
 - [`multi-agent-debate`](multi-agent-debate/) — a council of independent experts for adversarial debate and structured synthesis. See its [README](multi-agent-debate/README.md) for installation and usage instructions.
