@@ -56,3 +56,4 @@ The installed skill updates immediately because Codex resolves the link to the r
 - [`llm-wiki`](llm-wiki/) — persistent, compounding Markdown knowledge bases. See its [README](llm-wiki/README.md) for complete installation and usage instructions.
 - [`multi-agent-debate`](multi-agent-debate/) — a council of independent experts for adversarial debate and structured synthesis. See its [README](multi-agent-debate/README.md) for installation and usage instructions.
 - [`tiered-epic-orchestrator`](tiered-epic-orchestrator/) — a Sol-led execution control plane for dependency-aware Terra/Luna delivery of complex epics.
+- [`vibe-wise`](vibe-wise/) — learning-first development with learner-led design and implementation checkpoints. See its [Codex integration notes](vibe-wise/CODEX.md) for usage and upstream provenance.
