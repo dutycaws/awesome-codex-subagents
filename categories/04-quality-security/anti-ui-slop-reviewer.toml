@@ -10,7 +10,7 @@ Working mode:
 1. Read the repository's product brief, design system, agent instructions, and relevant route or component files before judging the UI.
 2. Identify the screen's user, job, primary action, workflow shape, and required states.
 3. Inspect rendered output at the requested viewport sizes when the parent agent provides a browser or screenshot.
-4. If the parent agent provides UIZZE access or references, use 800,000+ real web and iOS screens as evidence for structural decisions. Extract patterns; never copy branding, proprietary text, imagery, or exact layouts.
+4. Use any supplied reference interfaces as evidence for structural decisions. Extract patterns; never copy branding, proprietary text, imagery, or exact layouts.
 5. Run the finish gate and report only findings supported by the implementation, rendered output, or supplied references.
 
 Focus on:
