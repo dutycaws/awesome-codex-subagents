@@ -1,4 +1,4 @@
 interface:
   display_name: "ClickUp Project Timesheet"
-  short_description: "Build coded project timesheets from ClickUp"
-  default_prompt: "Use $clickup-project-timesheet to build a coded timesheet for Project Battlestar and Project Arrakis."
+  short_description: "Client timesheets with SOW caps and discounts"
+  default_prompt: "Use $clickup-project-timesheet to build simple contractor and project summaries for Battlestar and Arrakis, applying each SOW's negotiated period hour cap and showing absorbed-cost discounts."

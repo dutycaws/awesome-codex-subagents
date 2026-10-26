@@ -31,7 +31,7 @@ Selection rules:
 - Without `list_ids`, the client reads active folderless lists plus lists returned with active folders in the selected space. Optional `list_names` then applies an exact case-insensitive filter.
 - `project_code_field` defaults to `Project Code`.
 - `time_entry_slice_days` defaults to 31 and must be 1 through 366. Slicing bounds large responses and the generator de-duplicates time entries by ID.
-- Config files contain no token or authorization header.
+- Config files contain no token or authorization header. Each project may also contain a `client` object with confirmed contractor IDs, client categories, SOW hourly caps/rates, and allocation rules. See [client-timesheet.md](client-timesheet.md) and the bundled client-layout example for that contract.
 
 The two required project definitions have tab names `Project Battlestar` and `Project Arrakis`. Additional project tabs are allowed when explicitly requested. Excel tab names must be unique and no longer than 31 characters.
 
@@ -67,7 +67,7 @@ Use these coding statuses:
 | `Project Code field unavailable` | blank | Current task snapshot does not expose the configured field. |
 | `Task unavailable in current snapshot` | blank | Time entry references a task not returned by the selected current lists/pages. |
 | `Unknown dropdown option` | raw stored value | Field is populated but its value cannot be mapped to a current option. |
-Do not convert any uncoded status into a project code. Use `Uncoded` only as the matrix roll-up label. Track `Running or invalid duration` separately as the duration status; those rows remain visible but are excluded from hour totals.
+Do not convert any uncoded status into a project code. Track `Running or invalid duration` separately as the duration status; those rows remain visible but are excluded from hour totals.
 
 ## Workbook layout
 
@@ -76,12 +76,15 @@ Do not convert any uncoded status into a project code. Use `Uncoded` only as the
 Each project worksheet presents:
 
 - title and fixed reporting context;
-- KPI row: total hours, coded hours, uncoded hours, coding coverage, valid entries, excluded running/invalid entries;
-- `Hours by person and Project Code` matrix;
-- `Project Code summary`;
-- `Uncoded entries` with person, work date, task, hours, and coding status.
+- side-by-side contractor and client project tables matching the client template;
+- contractor gross subtotals, capped project costs, absorbed-cost discounts, charged hours and net cost;
+- visible unallocated hours. SOW caps and Client detail provide the calculation and allocation evidence. Raw Entries retains all coding and exclusion statuses. Run Info records coding coverage.
 
-Total hours include only nonnegative, finite durations. Coding coverage is coded hours divided by total valid hours. A zero-hour project displays `n.a.` rather than a false 0% coverage.
+Use [client-timesheet.md](client-timesheet.md) for column semantics, per-SOW cap rules and confirmed mappings. Each SOW has an independent hour cap for the reporting period. Actual client timesheet hours are never rounded up.
+
+Client detail Hours logged is the sole editable source for reported hours. Both summary sections and SOW cap calculations roll up from it. Preserve source milliseconds for audit, and explain adjustments. Project costs include their proportional share of the SOW cap; the informational discount must not be subtracted a second time.
+
+Total hours include only complete, nonnegative, finite durations whose start is in the reporting interval. Coding coverage is coded hours divided by total eligible hours. A zero-hour project displays `n.a.` rather than a false 0% coverage. Retained outside-period or invalid-start rows are exceptions, not part of this denominator.
 
 ### Raw Entries
 
@@ -109,6 +112,12 @@ One row per normalized time entry with these fields:
 - Task URL
 
 IDs are text. The raw sheet prefixes numeric user IDs with `U-` and time-entry IDs with `TE-` so spreadsheet engines cannot coerce them to scientific notation or lose digits. Hours are numbers. Dates and timestamps are typed values and formatted for the workbook locale.
+
+Schema version 2 appends Duration ms, Project Code field ID, Project Code option ID, Project Code raw value, Parent Task ID, Task status, List ID, Space ID, Period status, Start epoch ms and End epoch ms. Original columns retain their order. Missing or blank durations are not zero. End epoch is the observed API end, not start plus duration. Full precision milliseconds support exact QBO quantity calculations.
+
+The whole entry is assigned to its start date in the reporting timezone. The interval is start inclusive and end exclusive. Rows with an invalid start or a start outside the interval remain visible but do not enter report totals. An empty member-ID selection fails instead of silently exporting only the authenticated user's time.
+
+Project Code option identity is field ID plus option ID within a project. Resolve ID first, then orderindex; do not match by label as a fallback. A child task uses its own field. Task state and source Billable flag do not establish SOW state or contractual billability. The optional QBO handoff is defined in [qbo-handoff.md](qbo-handoff.md).
 
 ### Run Info
 

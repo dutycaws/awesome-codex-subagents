@@ -8,6 +8,7 @@ Included agents:
 - `agent-organizer` - Pick the right subagents and divide the work cleanly.
 - `codebase-orchestrator` - Repo-wide refactor governance with weighted risk, diff previews, and approval gates.
 - `context-manager` - Produce a compact project context packet for other agents.
+- `efficiency-inspector` - Audit agent workflows for evidence-backed efficiency improvements.
 - `error-coordinator` - Group and prioritize multiple error threads.
 - `it-ops-orchestrator` - Coordinate cross-domain IT and operations workflows.
 - `knowledge-synthesizer` - Merge findings from multiple agents into a usable summary.

@@ -2,6 +2,9 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
+import { buildClientSheets } from "./client-timesheet.mjs";
+import { writeQboHandoff, localSpreadsheetDate } from "./qbo-handoff.mjs";
 
 import { SpreadsheetFile, Workbook } from "@oai/artifact-tool";
 
@@ -12,7 +15,7 @@ import {
 
 const API_BASE_URL = "https://api.clickup.com/api/v2";
 const REQUIRED_PROJECT_TABS = ["Project Battlestar", "Project Arrakis"];
-const RESERVED_TABS = new Set(["Raw Entries", "Run Info"]);
+const RESERVED_TABS = new Set(["Raw Entries", "Run Info", "SOW caps", "Client detail"]);
 const HOURS_DIVISOR = 3_600_000;
 const DAY_MS = 86_400_000;
 const MAX_RETRIES = 5;
@@ -40,7 +43,9 @@ function printHelp() {
     [--token-file /absolute/path/token.txt] \\
     [--max-calls-per-minute 75] \\
     [--preview-dir /absolute/path/previews] \\
-    [--audit-json /absolute/path/extract.json]
+    [--audit-json /absolute/path/extract.json] \\
+    [--qbo-template /absolute/path/qbo-timesheet-template.xlsx] \\
+    [--qbo-project battlestar --qbo-output /absolute/path/qbo-handoff.xlsx]
 
 Fixture/rebuild mode:
   node scripts/clickup-project-timesheet.mjs \\
@@ -351,6 +356,7 @@ function validateConfig(config) {
     time_entry_slice_days: sliceDays,
     projects: config.projects.map((project, index) => ({
       key: normalizeText(project.key) || `project-${index + 1}`,
+      client: project.client ?? {},
       name: normalizeText(project.name) || normalizeText(project.tab_name),
       tab_name: normalizeText(project.tab_name),
       space_id: normalizeId(project.space_id),
@@ -538,15 +544,14 @@ async function fetchTimeEntries(
     }
     for (const entry of entries) {
       const id = normalizeId(entry.id);
-      if (id) {
-        byId.set(id, entry);
-      }
+      if (!id) throw new Error("A time entry has no immutable ID; refusing to silently omit it.");
+      byId.set(id, entry);
     }
   }
   return { entries: [...byId.values()], intervals, warnings };
 }
 
-function findProjectCode(task, fieldName) {
+export function findProjectCode(task, fieldName) {
   if (!task) {
     return {
       project_code: "",
@@ -572,6 +577,9 @@ function findProjectCode(task, fieldName) {
   ) {
     return {
       project_code: "",
+      project_code_field_id: String(field.id ?? ""),
+      project_code_option_id: "",
+      project_code_raw: "",
       coding_status: "Project Code blank",
       is_coded: false,
     };
@@ -584,20 +592,23 @@ function findProjectCode(task, fieldName) {
     typeof value === "object" && !Array.isArray(value)
       ? value.id ?? value.value ?? value.name
       : value;
-  const match = options.find(
-    (option) =>
-      String(option.id) === String(comparable) ||
-      String(option.orderindex) === String(comparable) ||
-      lower(option.name) === lower(comparable),
-  );
+  // Prefer the stable option ID over orderindex; names are not join keys.
+  const match = options.find((option) => String(option.id) === String(comparable))
+    ?? options.find((option) => String(option.orderindex) === String(comparable));
   if (match?.name) {
     return {
       project_code: normalizeText(match.name),
+      project_code_field_id: String(field.id ?? ""),
+      project_code_option_id: String(match.id ?? ""),
+      project_code_raw: JSON.stringify(value),
       coding_status: "Coded",
       is_coded: true,
     };
   }
   return {
+    project_code_field_id: String(field.id ?? ""),
+    project_code_option_id: "",
+    project_code_raw: JSON.stringify(value),
     project_code: normalizeText(comparable) || JSON.stringify(value),
     coding_status: "Unknown dropdown option",
     is_coded: false,
@@ -627,14 +638,16 @@ function tagNames(entry) {
     .join(", ");
 }
 
-function normalizeEntry(entry, project, space, taskMap, timeZone, fieldName) {
+export function normalizeEntry(entry, project, space, taskMap, timeZone, fieldName) {
   const taskId = normalizeText(entry.task?.id ?? entry.task_id);
   const task = taskMap.get(taskId);
-  const durationMs = Number(entry.duration);
-  const durationValid = Number.isFinite(durationMs) && durationMs >= 0;
-  const startMs = Number(entry.start);
-  const validStart = Number.isFinite(startMs);
-  const endMs = durationValid && validStart ? startMs + durationMs : null;
+  const numeric = (v) => v !== null && v !== undefined && String(v).trim() !== "" && Number.isSafeInteger(Number(v));
+  const durationMs = numeric(entry.duration) ? Number(entry.duration) : null;
+  const durationValid = durationMs !== null && durationMs >= 0;
+  const startMs = numeric(entry.start) ? Number(entry.start) : null;
+  const validStart = startMs !== null && startMs > 0;
+  // Preserve the observed end. Edited durations need not equal end minus start.
+  const endMs = numeric(entry.end) ? Number(entry.end) : null;
   const person = personDetails(entry);
   const coding = findProjectCode(task, fieldName);
   const location = entry.location ?? {};
@@ -647,13 +660,21 @@ function normalizeEntry(entry, project, space, taskMap, timeZone, fieldName) {
     work_date: validStart ? localDateString(startMs, timeZone) : "",
     start_ms: validStart ? startMs : null,
     end_ms: endMs,
+    duration_ms: durationMs,
     hours: durationValid ? durationMs / HOURS_DIVISOR : null,
     duration_status: durationValid ? "Complete" : "Running or invalid duration",
     duration_valid: durationValid,
+    project_code_field_id: coding.project_code_field_id ?? "",
+    project_code_option_id: coding.project_code_option_id ?? "",
+    project_code_raw: coding.project_code_raw ?? "",
     project_code: coding.project_code,
     coding_status: coding.coding_status,
     is_coded: coding.is_coded,
     task_id: taskId,
+    parent_task_id: normalizeText(task?.parent),
+    task_status: normalizeText(task?.status?.status ?? entry.task?.status?.status),
+    list_id: normalizeText(task?._source_list_id ?? location.list_id ?? location.list?.id),
+    space_id: String(space.id ?? ""),
     task_name: normalizeText(task?.name ?? entry.task?.name) || "Task unavailable",
     list_name:
       normalizeText(task?._source_list_name) ||
@@ -672,6 +693,28 @@ function normalizeEntry(entry, project, space, taskMap, timeZone, fieldName) {
   };
 }
 
+export function periodStatus(startMs, intervalStart, intervalEnd) {
+  if (startMs === null || !Number.isFinite(startMs)) return "Invalid start";
+  return startMs >= intervalStart && startMs < intervalEnd ? "In period" : "Outside period";
+}
+
+function collectProjectCodes(taskMap, fieldName) {
+  const codes = new Map();
+  for (const task of taskMap.values()) {
+    for (const field of task.custom_fields ?? []) {
+      if (lower(field.name) !== lower(fieldName)) continue;
+      for (const option of field.type_config?.options ?? []) {
+        codes.set(`${field.id}|${option.id}`, {
+          field_id: String(field.id),
+          option_id: String(option.id),
+          label: option.name,
+        });
+      }
+    }
+  }
+  return [...codes.values()];
+}
+
 async function collectLiveDataset(args, config) {
   const maxCallsPerMinute = Number(args.max_calls_per_minute ?? DEFAULT_CALLS_PER_MINUTE);
   // Validate the requested ceiling before reading a credential or attempting authentication.
@@ -682,6 +725,7 @@ async function collectLiveDataset(args, config) {
   const workspace = selectWorkspace(teamsResponse.teams ?? [], config);
   const workspaceId = String(workspace.id);
   const memberIds = collectWorkspaceMemberIds(workspace);
+  if (memberIds.length === 0) throw new Error("No workspace member IDs available; refusing a current-user-only time export.");
   const needsSpaces = config.projects.some((project) => !project.space_id);
   const spaces = needsSpaces
     ? (await client.get(`/team/${workspaceId}/space`, { archived: false })).spaces ?? []
@@ -716,9 +760,11 @@ async function collectLiveDataset(args, config) {
       endMs,
       config.time_entry_slice_days,
     );
-    const normalizedEntries = timeResult.entries.map((entry) =>
-      normalizeEntry(entry, project, space, taskMap, args.time_zone, config.project_code_field),
-    );
+    const normalizedEntries = timeResult.entries.map((entry) => {
+      const normalized = normalizeEntry(entry, project, space, taskMap, args.time_zone, config.project_code_field);
+      normalized.period_status = periodStatus(normalized.start_ms, startMs, endMs);
+      return normalized;
+    });
     for (const entry of normalizedEntries) {
       if (entry.time_entry_id && allTimeEntryIds.has(entry.time_entry_id)) {
         throw new Error(
@@ -731,6 +777,7 @@ async function collectLiveDataset(args, config) {
     }
     projects.push({
       key: project.key,
+      client: project.client,
       name: project.name,
       tab_name: project.tab_name,
       source: {
@@ -742,13 +789,14 @@ async function collectLiveDataset(args, config) {
         warnings: timeResult.warnings,
         lists,
       },
+      project_codes: collectProjectCodes(taskMap, config.project_code_field),
       entries: normalizedEntries,
     });
   }
 
   const generatedAt = Date.now();
   return {
-    schema_version: 1,
+    schema_version: 2,
     run: {
       generated_at_ms: generatedAt,
       generated_at_local: formatGeneratedAt(generatedAt, args.time_zone),
@@ -803,10 +851,12 @@ function validateDataset(dataset) {
   return dataset;
 }
 
-function validEntries(entries) {
+export function validEntries(entries) {
   return entries.filter(
     (entry) =>
       entry.duration_valid !== false &&
+      (!entry.period_status || entry.period_status === "In period") &&
+      entry.hours !== null && entry.hours !== undefined && entry.hours !== "" &&
       Number.isFinite(Number(entry.hours)) &&
       Number(entry.hours) >= 0,
   );
@@ -943,172 +993,6 @@ function addTable(sheet, rangeAddress, name) {
   return table;
 }
 
-function buildProjectSheet(workbook, dataset, project, projectIndex) {
-  const sheet = workbook.worksheets.add(project.tab_name);
-  sheet.showGridLines = false;
-  sheet.tabColor = projectIndex === 0 ? COLORS.navy : COLORS.blue;
-  const summary = projectSummary(project);
-  const matrix = aggregateMatrix(project);
-  const matrixHeaders = ["Person", ...matrix.projectCodes, "Uncoded", "Total"];
-  const matrixRows = matrix.rows.length > 0
-    ? matrix.rows
-    : [["No valid time entries", ...matrix.projectCodes.map(() => 0), 0, 0]];
-
-  sheet.getRange("A2").values = [[`${project.name} timesheet`]];
-  styleTitle(sheet, "A2");
-  sheet.getRange("A3").values = [[
-    `${dataset.run.start_date} through ${dataset.run.end_date} (end exclusive), ${dataset.run.time_zone}`,
-  ]];
-  sheet.getRange("A3").format.font = {
-    name: FONT_FAMILY,
-    size: 10,
-    italic: true,
-    color: COLORS.darkGray,
-  };
-  sheet.getRange("A5:F5").values = [[
-    "Total hours",
-    "Coded hours",
-    "Uncoded hours",
-    "Coding coverage",
-    "Valid entries",
-    "Excluded entries",
-  ]];
-  styleHeader(sheet, "A5:F5");
-  sheet.getRange("A6:F6").values = [[
-    summary.total_hours,
-    summary.coded_hours,
-    summary.uncoded_hours,
-    summary.coverage ?? "n.a.",
-    summary.valid_entries,
-    summary.invalid_entries,
-  ]];
-  sheet.getRange("A6:C6").format.numberFormat = "0.00";
-  if (summary.coverage !== null) {
-    sheet.getRange("D6").format.numberFormat = "0.0%";
-  }
-  sheet.getRange("E6:F6").format.numberFormat = "#,##0";
-  sheet.getRange("A6:F6").format.font = { name: FONT_FAMILY, size: 11, bold: true };
-  sheet.getRange("D6").format.font = { name: FONT_FAMILY, size: 11, bold: true };
-
-  sheet.getRange("A9").values = [["Hours by person and Project Code"]];
-  styleSection(sheet, `A9:${excelColumn(matrixHeaders.length - 1)}9`);
-  const matrixHeaderRow = 10;
-  const matrixLastRow = matrixHeaderRow + matrixRows.length;
-  const matrixLastColumn = excelColumn(matrixHeaders.length - 1);
-  sheet.getRange(`A${matrixHeaderRow}:${matrixLastColumn}${matrixHeaderRow}`).values = [matrixHeaders];
-  sheet.getRange(`A${matrixHeaderRow}:${matrixLastColumn}${matrixLastRow}`).write([
-    matrixHeaders,
-    ...matrixRows,
-  ]);
-  sheet.getRange(`A${matrixHeaderRow}:${matrixLastColumn}${matrixLastRow}`).format.font = {
-    name: FONT_FAMILY,
-    size: 10,
-  };
-  addTable(
-    sheet,
-    `A${matrixHeaderRow}:${matrixLastColumn}${matrixLastRow}`,
-    safeTableName("Matrix", project.tab_name, projectIndex + 1),
-  );
-  styleHeader(sheet, `A${matrixHeaderRow}:${matrixLastColumn}${matrixHeaderRow}`);
-  if (matrixHeaders.length > 1) {
-    sheet
-      .getRange(`B${matrixHeaderRow + 1}:${matrixLastColumn}${matrixLastRow}`)
-      .format.numberFormat = "0.00";
-  }
-
-  const codeTitleRow = matrixLastRow + 3;
-  const codeHeaderRow = codeTitleRow + 1;
-  const codeRows = aggregateCodes(project);
-  const codeData = codeRows.length > 0 ? codeRows : [["No valid time entries", 0, 0]];
-  const codeLastRow = codeHeaderRow + codeData.length;
-  sheet.getRange(`A${codeTitleRow}`).values = [["Project Code summary"]];
-  styleSection(sheet, `A${codeTitleRow}:C${codeTitleRow}`);
-  sheet.getRange(`A${codeHeaderRow}:C${codeLastRow}`).write([
-    ["Project Code", "Hours", "Entries"],
-    ...codeData,
-  ]);
-  sheet.getRange(`A${codeHeaderRow}:C${codeLastRow}`).format.font = {
-    name: FONT_FAMILY,
-    size: 10,
-  };
-  addTable(
-    sheet,
-    `A${codeHeaderRow}:C${codeLastRow}`,
-    safeTableName("Codes", project.tab_name, projectIndex + 1),
-  );
-  styleHeader(sheet, `A${codeHeaderRow}:C${codeHeaderRow}`);
-  sheet.getRange(`B${codeHeaderRow + 1}:B${codeLastRow}`).format.numberFormat = "0.00";
-  sheet.getRange(`C${codeHeaderRow + 1}:C${codeLastRow}`).format.numberFormat = "#,##0";
-
-  const exceptionTitleRow = codeLastRow + 3;
-  const exceptionHeaderRow = exceptionTitleRow + 1;
-  const exceptionEntries = project.entries
-    .filter((entry) => entry.is_coded !== true || entry.duration_valid === false)
-    .sort((left, right) =>
-      `${left.person}|${left.work_date}|${left.task_name}`.localeCompare(
-        `${right.person}|${right.work_date}|${right.task_name}`,
-      ),
-    );
-  const exceptionRows = exceptionEntries.length > 0
-    ? exceptionEntries.map((entry) => [
-        entry.person,
-        entry.work_date ? new Date(`${entry.work_date}T00:00:00`) : null,
-        entry.task_name,
-        entry.hours !== null &&
-        entry.hours !== undefined &&
-        Number.isFinite(Number(entry.hours))
-          ? Number(entry.hours)
-          : null,
-        entry.duration_status,
-        entry.coding_status,
-      ])
-    : [["No exceptions", null, "", null, "", ""]];
-  const exceptionLastRow = exceptionHeaderRow + exceptionRows.length;
-  sheet.getRange(`A${exceptionTitleRow}`).values = [["Uncoded and excluded entries"]];
-  styleSection(sheet, `A${exceptionTitleRow}:F${exceptionTitleRow}`);
-  sheet.getRange(`A${exceptionHeaderRow}:F${exceptionLastRow}`).write([
-    ["Person", "Work Date", "Task", "Hours", "Duration Status", "Coding Status"],
-    ...exceptionRows,
-  ]);
-  sheet.getRange(`A${exceptionHeaderRow}:F${exceptionLastRow}`).format.font = {
-    name: FONT_FAMILY,
-    size: 10,
-  };
-  addTable(
-    sheet,
-    `A${exceptionHeaderRow}:F${exceptionLastRow}`,
-    safeTableName("Exceptions", project.tab_name, projectIndex + 1),
-  );
-  styleHeader(sheet, `A${exceptionHeaderRow}:F${exceptionHeaderRow}`);
-  sheet.getRange(`B${exceptionHeaderRow + 1}:B${exceptionLastRow}`).format.numberFormat = "mm/dd/yy";
-  sheet.getRange(`D${exceptionHeaderRow + 1}:D${exceptionLastRow}`).format.numberFormat = "0.00";
-  if (exceptionEntries.length > 0) {
-    sheet
-      .getRange(`A${exceptionHeaderRow + 1}:F${exceptionLastRow}`)
-      .conditionalFormats.addCustom(
-        `=OR($F${exceptionHeaderRow + 1}<>\"Coded\",$E${exceptionHeaderRow + 1}<>\"Complete\")`,
-        {
-        fill: COLORS.paleRed,
-        font: { color: COLORS.red },
-        },
-      );
-  }
-
-  const usedRows = exceptionLastRow;
-  setWidths(
-    sheet,
-    Array.from({ length: Math.max(matrixHeaders.length, 6) }, (_, index) =>
-      index === 0 ? 24 : index === 2 && matrixHeaders.length <= 6 ? 34 : 15,
-    ),
-    usedRows,
-  );
-  sheet.getRange(`C${exceptionHeaderRow + 1}:C${exceptionLastRow}`).format.columnWidth = 44;
-  sheet.getRange(`E${exceptionHeaderRow + 1}:F${exceptionLastRow}`).format.columnWidth = 28;
-  sheet.freezePanes.freezeRows(matrixHeaderRow);
-  sheet.freezePanes.freezeColumns(1);
-  return { sheet, summary, usedRows, maxColumns: Math.max(matrixHeaders.length, 6) };
-}
-
 function buildRawEntriesSheet(workbook, dataset) {
   const sheet = workbook.worksheets.add("Raw Entries");
   sheet.showGridLines = false;
@@ -1140,22 +1024,24 @@ function buildRawEntriesSheet(workbook, dataset) {
     "Description",
     "Tags",
     "Task URL",
+    "Duration ms", "Project Code field ID", "Project Code option ID", "Project Code raw value",
+    "Parent Task ID", "Task status", "List ID", "Space ID", "Period status", "Start epoch ms", "End epoch ms",
   ];
   const values = rows.length > 0
     ? rows.map((entry) => [
         entry.project,
         entry.person,
         entry.person_id ? `U-${String(entry.person_id)}` : "",
-        entry.work_date ? new Date(`${entry.work_date}T00:00:00`) : null,
+        entry.work_date ? new Date(`${entry.work_date}T00:00:00Z`) : null,
         entry.start_ms !== null &&
         entry.start_ms !== undefined &&
         Number.isFinite(Number(entry.start_ms))
-          ? new Date(Number(entry.start_ms))
+          ? localSpreadsheetDate(Number(entry.start_ms), dataset.run.time_zone)
           : null,
         entry.end_ms !== null &&
         entry.end_ms !== undefined &&
         Number.isFinite(Number(entry.end_ms))
-          ? new Date(Number(entry.end_ms))
+          ? localSpreadsheetDate(Number(entry.end_ms), dataset.run.time_zone)
           : null,
         entry.hours !== null &&
         entry.hours !== undefined &&
@@ -1175,6 +1061,8 @@ function buildRawEntriesSheet(workbook, dataset) {
         entry.description,
         entry.tags,
         entry.task_url,
+        entry.duration_ms ?? null, entry.project_code_field_id ?? "", entry.project_code_option_id ?? "", entry.project_code_raw ?? "",
+        entry.parent_task_id ?? "", entry.task_status ?? "", entry.list_id ?? "", entry.space_id ?? "", entry.period_status ?? "Not recorded", entry.start_ms ?? null, entry.end_ms ?? null,
       ])
     : [["No entries returned", ...Array(headers.length - 1).fill(null)]];
 
@@ -1205,10 +1093,9 @@ function buildRawEntriesSheet(workbook, dataset) {
   sheet.getRange(`C${headerRow + 1}:C${lastRow}`).format.numberFormat = "@";
   sheet.getRange(`K${headerRow + 1}:K${lastRow}`).format.numberFormat = "@";
   sheet.getRange(`P${headerRow + 1}:P${lastRow}`).format.numberFormat = "@";
-  const widths = [
-    22, 22, 14, 12, 20, 20, 10, 24, 28, 34,
-    16, 44, 28, 24, 24, 22, 12, 38, 28, 42,
-  ];
+  for (const column of ["V", "W", "X", "Y", "AA", "AB"]) sheet.getRange(`${column}${headerRow + 1}:${column}${lastRow}`).setNumberFormat("@");
+  for (const column of ["U", "AD", "AE"]) sheet.getRange(`${column}${headerRow + 1}:${column}${lastRow}`).setNumberFormat("0");
+  const widths = [22,22,14,12,20,20,14,24,40,34,16,44,28,24,24,24,12,38,28,42,18,40,40,24,20,20,20,20,20,22,22];
   setWidths(sheet, widths, lastRow);
   sheet.freezePanes.freezeRows(headerRow);
   sheet.freezePanes.freezeColumns(2);
@@ -1286,6 +1173,9 @@ function buildRunInfoSheet(workbook, dataset, orderedProjects, projectResults, r
     "Archived, deleted, moved, or otherwise unavailable tasks remain uncoded; the generator does not issue per-entry task requests.",
     "Running or invalid-duration entries remain visible but are excluded from hour totals.",
     "The workbook supports invoice review but does not decide whether time is contractually billable.",
+    "Project Code is an allocation label, not SOW status or a QBO product. Legacy and pending allocation require review.",
+    "Subtasks use their own Project Code. Never inherit the parent code or count task time_spent rollups.",
+    "Whole entry duration is attributed to its local start date; end is exclusive. Outside-period/invalid-start rows do not enter totals.",
   ];
   const limitationTitleRow = projectLastRow + 3;
   sheet.getRange(`A${limitationTitleRow}`).values = [["Limitations"]];
@@ -1337,9 +1227,8 @@ async function buildWorkbook(dataset, outputPath, previewDirectory) {
       (project) => !REQUIRED_PROJECT_TABS.includes(project.tab_name),
     ),
   ];
-  const projectResults = orderedProjects.map((project, index) =>
-    buildProjectSheet(workbook, dataset, project, index),
-  );
+  const client = buildClientSheets(workbook, dataset, orderedProjects);
+  const projectResults = client.results.map((result, index) => ({...result, summary: projectSummary(orderedProjects[index])}));
   const rawResult = buildRawEntriesSheet(workbook, dataset);
   const runInfoResult = buildRunInfoSheet(
     workbook,
@@ -1363,7 +1252,7 @@ async function buildWorkbook(dataset, outputPath, previewDirectory) {
   workbook.recalculate();
   if (previewDirectory) {
     await fs.mkdir(previewDirectory, { recursive: true });
-    for (const result of [...projectResults, rawResult, runInfoResult]) {
+    for (const result of [...projectResults, ...client.support, rawResult, runInfoResult]) {
       const lastColumn = excelColumn(Math.min(result.maxColumns, 12) - 1);
       const lastRow = Math.min(result.usedRows, 45);
       const preview = await workbook.render({
@@ -1432,15 +1321,19 @@ async function main() {
   if (args.audit_json) {
     await writeJson(path.resolve(args.audit_json), dataset);
   }
+  const qboFlags = [args.qbo_template, args.qbo_project, args.qbo_output];
+  if (qboFlags.some(Boolean) && !qboFlags.every(Boolean)) throw new Error("Supply --qbo-template, --qbo-project and --qbo-output together.");
+  if (args.qbo_output && path.resolve(args.qbo_output) === outputPath) throw new Error("QBO handoff and source report must have different output paths.");
   const summary = await buildWorkbook(
     dataset,
     outputPath,
     args.preview_dir ? path.resolve(args.preview_dir) : null,
   );
+  if (args.qbo_template) summary.qbo_handoff = await writeQboHandoff(dataset, args.qbo_project, path.resolve(args.qbo_template), path.resolve(args.qbo_output));
   console.log(JSON.stringify(summary, null, 2));
 }
 
-main().catch((error) => {
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) main().catch((error) => {
   console.error(`Timesheet generation failed: ${error.message}`);
   process.exitCode = 1;
 });

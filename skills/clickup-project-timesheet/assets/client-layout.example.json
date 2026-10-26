@@ -1,0 +1,119 @@
+{
+  "contractors": [
+    {
+      "id": "replace-1",
+      "name": "Jan V"
+    },
+    {
+      "id": "replace-2",
+      "name": "Ryan M"
+    },
+    {
+      "id": "replace-3",
+      "name": "Seth R"
+    },
+    {
+      "id": "replace-4",
+      "name": "Travis B"
+    },
+    {
+      "id": "replace-5",
+      "name": "Cody W"
+    },
+    {
+      "id": "replace-6",
+      "name": "Min H"
+    }
+  ],
+  "categories": [
+    {
+      "id": "client-1",
+      "name": "BS1 Salesforce",
+      "sow_id": "BS1"
+    },
+    {
+      "id": "client-2",
+      "name": "BS1 Phone System (Zoom)",
+      "sow_id": "BS1"
+    },
+    {
+      "id": "client-3",
+      "name": "BS1 Phone/Email Migration",
+      "sow_id": "BS1"
+    },
+    {
+      "id": "client-4",
+      "name": "BS1 Dentist Portal",
+      "sow_id": "BS1"
+    },
+    {
+      "id": "client-5",
+      "name": "BS1 Order Entry Development",
+      "sow_id": "BS1"
+    },
+    {
+      "id": "client-6",
+      "name": "BS 8 MSP and Administration",
+      "sow_id": "BS8"
+    },
+    {
+      "id": "client-7",
+      "name": "BS 10 Custom Sales and Marketing Reports",
+      "sow_id": "BS10"
+    },
+    {
+      "id": "client-8",
+      "name": "BS 11 Historical Data Normalization",
+      "sow_id": "BS11"
+    },
+    {
+      "id": "client-9",
+      "name": "BS 12 Marketing Website Maintenance",
+      "sow_id": "BS12"
+    },
+    {
+      "id": "client-10",
+      "name": "BS 17 Kinder Krowns Pipeline Discovery",
+      "sow_id": "BS17"
+    }
+  ],
+  "sows": [
+    {
+      "id": "BS1",
+      "name": "BS1 Phase 1",
+      "cap_hours": null,
+      "evidence": ""
+    },
+    {
+      "id": "BS8",
+      "name": "BS 8 MSP and Administration",
+      "cap_hours": null,
+      "evidence": ""
+    },
+    {
+      "id": "BS10",
+      "name": "BS 10 Custom Sales and Marketing Reports",
+      "cap_hours": null,
+      "evidence": ""
+    },
+    {
+      "id": "BS11",
+      "name": "BS 11 Historical Data Normalization",
+      "cap_hours": null,
+      "evidence": ""
+    },
+    {
+      "id": "BS12",
+      "name": "BS 12 Marketing Website Maintenance",
+      "cap_hours": null,
+      "evidence": ""
+    },
+    {
+      "id": "BS17",
+      "name": "BS 17 Kinder Krowns Pipeline Discovery",
+      "cap_hours": null,
+      "evidence": ""
+    }
+  ],
+  "allocations": []
+}
